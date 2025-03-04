@@ -1,8 +1,14 @@
 import yaml
-from dataclasses import dataclass
 import logging
 import colorlog
+from typing import List
+from dataclasses import dataclass
 
+@dataclass
+class Pair:
+    name: str
+    source_chat_id: int
+    target_chat_id: int
 
 @dataclass
 class Config:
@@ -10,8 +16,7 @@ class Config:
     api_hash: str
     phone: str
     bot_token: str
-    source_chat_id: int
-    target_chat_id: int
+    pairs: List[Pair]
     log_level: str
     log_file: str
     temp_dir: str
@@ -23,13 +28,14 @@ class Config:
         try:
             with open(path, 'r') as f:
                 data = yaml.safe_load(f)
+                pairs = [Pair(name=p['name'], source_chat_id=p['source_chat_id'], target_chat_id=p['target_chat_id'])
+                         for p in data['pairs']]
                 return cls(
                     api_id=data['client']['api_id'],
                     api_hash=data['client']['api_hash'],
                     phone=data['client']['phone'],
                     bot_token=data['bot']['token'],
-                    source_chat_id=data['source']['chat_id'],
-                    target_chat_id=data['target']['chat_id'],
+                    pairs=pairs,
                     log_level=data['logging']['level'],
                     log_file=data['logging']['file'],
                     temp_dir=data['temp_dir']
@@ -40,9 +46,7 @@ class Config:
 
     def setup_logging(self):
         level = getattr(logging, self.log_level.upper(), logging.INFO)
-        # Формат для файла (без цвета)
         file_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-        # Формат для консоли (с цветом)
         console_formatter = colorlog.ColoredFormatter(
             '%(log_color)s%(asctime)s - %(name)s - %(levelname)s - %(message)s',
             log_colors={
@@ -53,17 +57,11 @@ class Config:
                 'CRITICAL': 'red,bg_white',
             }
         )
-
-        # Обработчик для файла
         file_handler = logging.FileHandler(self.log_file)
         file_handler.setFormatter(file_formatter)
-
-        # Обработчик для консоли
         console_handler = logging.StreamHandler()
         console_handler.setFormatter(console_formatter)
-
-        # Настройка корневого логгера
         logging.getLogger().setLevel(level)
-        logging.getLogger().handlers = []  # Очищаем существующие обработчики
+        logging.getLogger().handlers = []
         logging.getLogger().addHandler(file_handler)
         logging.getLogger().addHandler(console_handler)
