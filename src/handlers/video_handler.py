@@ -1,16 +1,15 @@
 import os
-
-from telethon.tl.types import DocumentAttributeVideo
-
 from .base_handler import BaseMediaHandler
-
+from telethon.tl.types import DocumentAttributeVideo
+from tqdm import tqdm
 
 class VideoHandler(BaseMediaHandler):
     def supports(self, message):
-        supports_video = hasattr(message.media, 'video') and message.media.video == True
-        supports_video = supports_video or (hasattr(message.document,
-                                                    'mime_type') and message.document.mime_type.startswith('video'))
-        self.logger.info(f"VideoHandler supports check: has_video={supports_video}, result={supports_video}")
+        supports_video = hasattr(message.media, 'video') or \
+                         (hasattr(message.media, 'document') and
+                          hasattr(message.media.document, 'mime_type') and
+                          message.media.document.mime_type.startswith('video'))
+        self.logger.info(f"VideoHandler supports check: result={supports_video}")
         return supports_video
 
     async def handle(self, message, target_topic_id):
@@ -22,9 +21,8 @@ class VideoHandler(BaseMediaHandler):
             w=attr.w,
             h=attr.h,
             supports_streaming=True
-        ) for attr in (
-            message.media.document.attributes if hasattr(message.media, 'document') else [message.media.video])
-                         if isinstance(attr, DocumentAttributeVideo)][0:1]
+        ) for attr in (message.media.document.attributes if hasattr(message.media, 'document') else [message.media.video])
+            if isinstance(attr, DocumentAttributeVideo)][0:1]
 
         file_size = os.path.getsize(downloaded_path)
         file_paths = [downloaded_path]
@@ -42,15 +40,20 @@ class VideoHandler(BaseMediaHandler):
                 continue
 
             part_text = f"Файл разрезан. Часть {i}\n{message.message or ''}" if was_split else message.message or ''
-            sent_message = await self.client.bot.send_file(
-                self.target_chat_id,
-                file=part_path,
-                caption=part_text,
-                supports_streaming=True,
-                attributes=attributes,
-                reply_to=target_topic_id if target_topic_id != 0 else None,
-                formatting_entities=message.entities if message.entities else None
-            )
+            with tqdm(total=part_size, unit='B', unit_scale=True, desc=f"Uploading video part {i} for message {message.id}") as pbar:
+                def progress_callback(current, total):
+                    pbar.update(current - pbar.n)
+
+                sent_message = await self.client.bot.send_file(
+                    self.target_chat_id,
+                    file=part_path,
+                    caption=part_text,
+                    supports_streaming=True,
+                    attributes=attributes,
+                    reply_to=target_topic_id if target_topic_id != 0 else None,
+                    formatting_entities=message.entities if message.entities else None,
+                    progress_callback=progress_callback
+                )
             sent_messages.append(sent_message)
             os.remove(part_path)
             self.logger.info(f"Removed temporary file {part_path}")
