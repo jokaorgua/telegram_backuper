@@ -54,13 +54,16 @@ class Config:
             }
         )
 
+        # Обработчик для файла
         file_handler = logging.FileHandler(self.log_file)
         file_handler.setFormatter(file_formatter)
 
+        # Обработчик для консоли
         console_handler = logging.StreamHandler()
         console_handler.setFormatter(console_formatter)
 
-        logging.basicConfig(
-            level=level,
-            handlers=[file_handler, console_handler]
-        )
+        # Настройка корневого логгера
+        logging.getLogger().setLevel(level)
+        logging.getLogger().handlers = []  # Очищаем существующие обработчики
+        logging.getLogger().addHandler(file_handler)
+        logging.getLogger().addHandler(console_handler)

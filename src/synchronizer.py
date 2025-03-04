@@ -91,7 +91,6 @@ class Synchronizer:
                     return target_id
                 self.logger.warning(f"Topic {target_id} not found in target or invalid: {str(e)}, recreating")
 
-        # Создаём новую тему
         await self.client.bot(CreateForumTopicRequest(channel=self.target_chat_id, title=source_title))
         await asyncio.sleep(1)
         target_topics = await self.client.client(GetForumTopicsRequest(
@@ -126,36 +125,86 @@ class Synchronizer:
         except RPCError as e:
             self.logger.warning(f"Failed to rename topic {target_id} to '{new_title}': {str(e)}")
 
+    async def sync_history(self, start_date: datetime = None):
+        """Синхронизирует всю историю сообщений из исходной группы."""
+        self.logger.info(f"Starting full history sync from {start_date}")
+        try:
+            async for message in self.client.client.iter_messages(
+                    self.source_chat_id,
+                    offset_date=start_date,
+                    reverse=True
+            ):
+                await self.processor.process_message(message)
+            self.logger.info("Full history sync completed")
+        except Exception as e:
+            self.logger.error(f"Failed to sync history: {str(e)}")
+            raise
+
+    async def sync_threads(self, start_date: datetime = None):
+        """Синхронизирует сообщения только из тем (игнорирует общий чат)."""
+        self.logger.info(f"Starting threads-only sync from {start_date}")
+        try:
+            async for message in self.client.client.iter_messages(
+                    self.source_chat_id,
+                    offset_date=start_date,
+                    reverse=True
+            ):
+                topic_id = 0
+                if hasattr(message, 'reply_to') and message.reply_to and message.reply_to.forum_topic:
+                    topic_id = message.reply_to.reply_to_top_id if message.reply_to.reply_to_top_id else message.reply_to.reply_to_msg_id
+                if topic_id != 0:
+                    await self.processor.process_message(message)
+                else:
+                    self.logger.debug(f"Skipping message {message.id} - not in a thread")
+            self.logger.info("Threads-only sync completed")
+        except Exception as e:
+            self.logger.error(f"Failed to sync threads: {str(e)}")
+            raise
+
+    async def sync_thread(self, topic_id: int, start_date: datetime = None):
+        """Синхронизирует сообщения из конкретной темы."""
+        self.logger.info(f"Starting sync for thread {topic_id} from {start_date}")
+        try:
+            # Используем reply_to для фильтрации сообщений по теме
+            async for message in self.client.client.iter_messages(
+                    self.source_chat_id,
+                    offset_date=start_date,
+                    reverse=True,
+                    reply_to=topic_id  # Фильтруем сообщения по теме напрямую
+            ):
+                source_topic_id = 0
+                if hasattr(message, 'reply_to') and message.reply_to and message.reply_to.forum_topic:
+                    source_topic_id = message.reply_to.reply_to_top_id if message.reply_to.reply_to_top_id else message.reply_to.reply_to_msg_id
+                if source_topic_id == topic_id:  # Дополнительная проверка для точности
+                    await self.processor.process_message(message)
+                else:
+                    self.logger.debug(
+                        f"Skipping message {message.id} - topic {source_topic_id} does not match requested {topic_id}")
+            self.logger.info(f"Thread {topic_id} sync completed")
+        except Exception as e:
+            self.logger.error(f"Failed to sync thread {topic_id}: {str(e)}")
+            raise
+
     async def sync_topics(self):
+        """Синхронизирует темы между исходной и целевой группами."""
         self.logger.info("Starting topics synchronization")
         try:
-            # Проверка прав бота
             await self._check_bot_permissions()
-
-            # 1. Получаем темы из источника
             source_topic_dict = await self._get_source_topics()
             if not source_topic_dict:
                 return
-
-            # 2. Получаем темы из таргета
             target_topic_dict, target_title_to_id = await self._get_target_topics()
-
-            # 3. Получаем темы из базы
             db_topic_dict, db_records = self._get_db_topics()
 
-            # 4. Обрабатываем темы из источника
             for source_id, source_title in source_topic_dict.items():
-                db_record = db_topic_dict.get(source_id)  # (target_id, title) или None
+                db_record = db_topic_dict.get(source_id)
                 target_id = db_record[0] if db_record else None
                 db_title = db_record[1] if db_record else None
 
-                # 4.1 Если тема есть в базе и таргете, и всё совпадает
                 if db_record and target_id in target_topic_dict and source_title == target_topic_dict[target_id]:
                     self.logger.debug(
                         f"Topic '{source_title}' (Source ID: {source_id}, Target ID: {target_id}) is up-to-date, skipping")
                     continue
-
-                # 4.2 Если тема есть в базе, но ID расходится или недействителен
                 elif db_record:
                     if target_id not in target_topic_dict or target_topic_dict[target_id] != source_title:
                         existing_target_id = target_title_to_id.get(source_title)
@@ -167,8 +216,6 @@ class Synchronizer:
                             new_target_id = await self._create_or_update_topic(source_id, source_title)
                             self.logger.info(
                                 f"Recreated topic '{source_title}' (Source ID: {source_id}) with new Target ID {new_target_id}")
-
-                # 4.3 Если темы нет в базе
                 else:
                     existing_target_id = target_title_to_id.get(source_title)
                     if existing_target_id:
@@ -181,7 +228,6 @@ class Synchronizer:
                         self.logger.info(
                             f"Created topic '{source_title}' (Source ID: {source_id}) with Target ID {new_target_id}")
 
-            # 5. Обрабатываем темы из таргета
             for target_id, target_title in target_topic_dict.items():
                 source_id = next((sid for sid, (tid, t) in db_topic_dict.items() if tid == target_id), None)
                 if source_id is None and target_title not in source_topic_dict.values():
@@ -198,6 +244,7 @@ class Synchronizer:
             raise
 
     async def listen_new_messages(self):
+        """Слушает новые сообщения в исходной группе."""
         self.logger.info("Starting to listen for new messages")
 
         @self.client.client.on(events.NewMessage(chats=self.source_chat_id))
