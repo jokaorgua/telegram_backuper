@@ -9,7 +9,8 @@ class WebPageHandler(BaseMediaHandler):
         return supports_webpage
 
     async def handle(self, message, target_topic_id):
-        self.logger.info(f"Skipping message {message.id} - media is a webpage preview")
+        message_date = message.date.strftime('%Y-%m-%d %H:%M:%S')
+        self.logger.info(f"Skipping message {message.id} from {message_date} - media is a webpage preview")
         if message.message:
             return await self.processor._handle_text(message, target_topic_id)
         return None

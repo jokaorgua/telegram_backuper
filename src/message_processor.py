@@ -30,7 +30,8 @@ class MessageProcessor:
             self.message_map[self.source_chat_id] = {}
         if self.target_chat_id not in self.message_map[self.source_chat_id]:
             self.message_map[self.source_chat_id][self.target_chat_id] = {}
-        self.logger.info(f"Processing message {message.id} in topic {source_topic_id}")
+        message_date = message.date.strftime('%Y-%m-%d %H:%M:%S')
+        self.logger.info(f"Processing message {message.id} from {message_date} in topic {source_topic_id}")
 
         msg_record = self.repository.get_message(message.id, self.source_chat_id, self.target_chat_id)
         target_msg_id = msg_record[1] if msg_record else None
@@ -42,7 +43,7 @@ class MessageProcessor:
                 self.logger.warning(f"Message {message.id} (Target ID: {target_msg_id}) not found in target, marking for reupload")
                 should_reupload = True
             elif msg_record[3] == 1:
-                self.logger.info(f"Message {message.id} already synced to {target_msg_id} and exists in target")
+                self.logger.info(f"Message {message.id} from {message_date} already synced to {target_msg_id} and exists in target")
                 self._store_message_mapping(message.id, target_msg_id)
                 return None
 
@@ -50,7 +51,7 @@ class MessageProcessor:
             if not msg_record:
                 self.repository.add_message(message.id, self.source_chat_id, self.target_chat_id, source_topic_id)
             else:
-                self.logger.info(f"Reuploading message {message.id} due to missing target ID {target_msg_id}")
+                self.logger.info(f"Reuploading message {message.id} from {message_date} due to missing target ID {target_msg_id}")
 
         target_topic_id = self._get_target_topic_id(source_topic_id)
 
@@ -59,12 +60,12 @@ class MessageProcessor:
         elif message.message:
             result = await self._handle_text(message, target_topic_id)
         else:
-            self.logger.warning(f"Skipped message {message.id} - no content")
+            self.logger.warning(f"Skipped message {message.id} from {message_date} - no content")
             return None
 
         if result:
             self.repository.update_message(message.id, self.source_chat_id, self.target_chat_id, result.id)
-            self.logger.info(f"Processed message {message.id} to {result.id} in topic {target_topic_id}")
+            self.logger.info(f"Processed message {message.id} from {message_date} to {result.id} in topic {target_topic_id}")
             await asyncio.sleep(0.1)
         return result
 
@@ -78,16 +79,18 @@ class MessageProcessor:
         return target_topic_id
 
     async def _handle_media(self, message, target_topic_id):
+        message_date = message.date.strftime('%Y-%m-%d %H:%M:%S')
         for handler in self.handlers:
             if handler.supports(message):
-                self.logger.info(f"Selected handler {handler.__class__.__name__} for message {message.id}")
+                self.logger.info(f"Selected handler {handler.__class__.__name__} for message {message.id} from {message_date}")
                 return await handler.handle(message, target_topic_id)
-        self.logger.error(f"No handler supports media type in message {message.id}, message dump: {message.__dict__}")
+        self.logger.error(f"No handler supports media type in message {message.id} from {message_date}, message dump: {message.__dict__}")
         return None
 
     async def _handle_text(self, message, target_topic_id):
+        message_date = message.date.strftime('%Y-%m-%d %H:%M:%S')
         text = self._process_links(message.message)
-        self.logger.info(f"Sending text message {message.id}")
+        self.logger.info(f"Sending text message {message.id} from {message_date}")
         sent_message = await self.client.bot.send_message(
             self.target_chat_id,
             text,
