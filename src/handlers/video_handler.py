@@ -1,15 +1,25 @@
 import os
-from .base_handler import BaseMediaHandler
+
 from telethon.tl.types import DocumentAttributeVideo
 from tqdm import tqdm
 
+from .base_handler import BaseMediaHandler
+
+
 class VideoHandler(BaseMediaHandler):
-    def supports(self, message):
-        supports_video = hasattr(message.media, 'video') and message.media.video == True
-        supports_video = supports_video or (hasattr(message.document,
-                                                    'mime_type') and message.document.mime_type.startswith('video'))
-        self.logger.info(f"VideoHandler supports check: result={supports_video}")
-        return supports_video
+    def supports(self, message_or_group):
+        if isinstance(message_or_group, list):
+            # Проверяем, что все сообщения содержат только фото
+            messages = message_or_group
+        else:
+            messages = [message_or_group]
+
+        return all(
+            (hasattr(msg.media, 'video') and msg.media.video == True) or
+            (hasattr(msg.media, 'document') and hasattr(msg.media.document, 'mime_type') and
+             msg.media.document.mime_type.startswith('video'))
+            for msg in messages
+        )
 
     def _is_round_video(self, message):
         return hasattr(message.media, 'round') and message.media.round is True
@@ -23,8 +33,9 @@ class VideoHandler(BaseMediaHandler):
             w=attr.w,
             h=attr.h,
             supports_streaming=True
-        ) for attr in (message.media.document.attributes if hasattr(message.media, 'document') else [message.media.video])
-            if isinstance(attr, DocumentAttributeVideo)][0:1]
+        ) for attr in (
+            message.media.document.attributes if hasattr(message.media, 'document') else [message.media.video])
+                         if isinstance(attr, DocumentAttributeVideo)][0:1]
 
         self.logger.info("Video media: {}".format(message.media.__dict__))
         is_round = self._is_round_video(message)
@@ -40,7 +51,8 @@ class VideoHandler(BaseMediaHandler):
         message_date = message.date.strftime('%Y-%m-%d %H:%M:%S')
         for i, part_path in enumerate(file_paths, 1):
             part_size = os.path.getsize(part_path)
-            self.logger.info(f"Preparing to send part {i} with size {part_size} bytes from {part_path} for message {message.id} from {message_date}")
+            self.logger.info(
+                f"Preparing to send part {i} with size {part_size} bytes from {part_path} for message {message.id} from {message_date}")
             if not os.path.exists(part_path):
                 self.logger.error(f"File {part_path} does not exist before sending")
                 continue

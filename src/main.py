@@ -1,5 +1,6 @@
 import asyncio
 from datetime import datetime, timedelta
+
 from .config import Config
 from .client import TelegramClientInterface
 from .synchronizer import Synchronizer
@@ -10,6 +11,7 @@ from .handlers.photo_handler import PhotoHandler
 from .handlers.video_handler import VideoHandler
 from .handlers.audio_handler import AudioHandler
 from .handlers.webpage_handler import WebPageHandler
+from .handlers.mixed_media_handler import MixedMediaHandler
 import logging
 import argparse
 import os
@@ -48,7 +50,7 @@ async def main(args):
     await client.start()
 
     # Регистрация хендлеров
-    handlers = [PhotoHandler, VideoHandler, AudioHandler, WebPageHandler]
+    handlers = [PhotoHandler, VideoHandler, AudioHandler, MixedMediaHandler, WebPageHandler]
 
     mode = args.mode
     if mode in ["sync", "sync-threads", "sync-topics", "sync-thread"]:

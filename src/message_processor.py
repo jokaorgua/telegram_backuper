@@ -49,27 +49,23 @@ class MessageProcessor:
         return await self._process_single_message(message, source_topic_id)
 
     async def _collect_group_messages(self, message):
-        """Собирает все сообщения из группы по grouped_id, начиная с текущего сообщения."""
         grouped_id = message.grouped_id
         group_messages = [message]
         self.logger.info(f"Collecting group messages for grouped_id {grouped_id} starting from message {message.id}")
 
-        # Просматриваем 30 сообщений после текущего (в сторону новых сообщений)
         async for msg in self.client.client.iter_messages(
                 self.source_chat_id,
-                min_id=message.id - 1,  # Начинаем с сообщений после текущего
-                limit=30,  # Ограничиваем 30 сообщениями
-                reverse=True  # Идём от старых к новым
+                min_id=message.id - 1,
+                limit=30,
+                reverse=True
         ):
             if msg.grouped_id == grouped_id and msg.id != message.id:
                 group_messages.append(msg)
                 self.logger.info(f"Added message {msg.id} to group {grouped_id}")
 
-        # Возвращаем группу только если найдено больше 1 сообщения
         return group_messages if len(group_messages) > 1 else None
 
     async def _process_group_messages(self, messages, source_topic_id):
-        """Обрабатывает группу сообщений как одно сообщение."""
         lead_message = messages[0]
         message_date = lead_message.date.strftime('%Y-%m-%d %H:%M:%S')
         self.logger.info(
@@ -119,7 +115,6 @@ class MessageProcessor:
         return None
 
     async def _process_single_message(self, message, source_topic_id):
-        """Обрабатывает одиночное сообщение."""
         message_date = message.date.strftime('%Y-%m-%d %H:%M:%S')
         msg_record = self.repository.get_message(message.id, self.source_chat_id, self.target_chat_id)
         target_msg_id = msg_record[1] if msg_record else None

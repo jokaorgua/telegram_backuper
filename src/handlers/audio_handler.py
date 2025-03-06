@@ -4,12 +4,19 @@ from telethon.tl.types import DocumentAttributeAudio, DocumentAttributeVideo
 from tqdm import tqdm
 
 class AudioHandler(BaseMediaHandler):
-    def supports(self, message):
-        supports_audio = hasattr(message.media, 'voice') and message.media.voice == True
-        supports_audio = supports_audio or (hasattr(message.document,
-                                                    'mime_type') and message.document.mime_type.startswith('audio'))
-        self.logger.info(f"AudioHandler supports check: result={supports_audio}")
-        return supports_audio
+    def supports(self, message_or_group):
+        if isinstance(message_or_group, list):
+            # Проверяем, что все сообщения содержат только фото
+            messages = message_or_group
+        else:
+            messages = [message_or_group]
+
+        return all(
+            (hasattr(msg.media, 'voice') and msg.media.voice == True) or
+            (hasattr(msg.media, 'document') and hasattr(msg.media.document, 'mime_type') and
+             msg.media.document.mime_type.startswith('audio'))
+            for msg in messages
+        )
 
     async def handle(self, message, target_topic_id):
         file_path = os.path.join(self.processor.temp_dir, f"media_{message.id}_{self.processor.source_chat_id}.mp3")
