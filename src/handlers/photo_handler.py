@@ -1,12 +1,9 @@
 import os
-
 from .base_handler import BaseMediaHandler
-
 
 class PhotoHandler(BaseMediaHandler):
     def supports(self, message_or_group):
         if isinstance(message_or_group, list):
-            # Проверяем, что все сообщения содержат только фото
             messages = message_or_group
         else:
             messages = [message_or_group]
@@ -18,8 +15,7 @@ class PhotoHandler(BaseMediaHandler):
             for msg in messages
         )
 
-    async def handle(self, message_or_group, target_topic_id):
-        # Если передан список сообщений (группа), обрабатываем как группу
+    async def handle(self, message_or_group, target_reply_to_msg_id):
         if isinstance(message_or_group, list):
             messages = message_or_group
             lead_message = messages[0]
@@ -27,7 +23,6 @@ class PhotoHandler(BaseMediaHandler):
             file_paths = []
             text_parts = []
 
-            # Собираем файлы и тексты
             for msg in messages:
                 file_path = os.path.join(self.processor.temp_dir, f"media_{msg.id}_{self.processor.source_chat_id}.jpg")
                 downloaded_path = await self.media_manager.download_media(msg, file_path)
@@ -37,41 +32,35 @@ class PhotoHandler(BaseMediaHandler):
                     text_parts.append(msg.message.strip())
                     self.logger.info(f"Found text in message {msg.id}: '{msg.message.strip()}'")
 
-            # Склеиваем все непустые тексты с разделителем
             part_text = '\n'.join(text_parts) if text_parts else ''
-
-            self.logger.info(
-                f"Sending group of {len(file_paths)} photos for message {lead_message.id} from {message_date} with message: '{part_text}'")
+            self.logger.info(f"Sending group of {len(file_paths)} photos for message {lead_message.id} from {message_date} with message: '{part_text}'")
             sent_message = await self.client.bot.send_message(
                 self.target_chat_id,
-                message=part_text,  # Используем message для текста
-                file=file_paths,  # Передаем список файлов
+                message=part_text,
+                file=file_paths,
                 force_document=False,
-                reply_to=target_topic_id if target_topic_id != 0 else None,
+                reply_to=target_reply_to_msg_id if target_reply_to_msg_id != 0 else None,
                 formatting_entities=lead_message.entities if lead_message.entities else None
             )
 
             for file_path in file_paths:
                 os.remove(file_path)
-                self.logger.info(
-                    f"Removed temporary file {file_path} for group message {lead_message.id} from {message_date}")
+                self.logger.info(f"Removed temporary file {file_path} for group message {lead_message.id} from {message_date}")
             return sent_message
 
-        # Одиночное фото
         message = message_or_group
         file_path = os.path.join(self.processor.temp_dir, f"media_{message.id}_{self.processor.source_chat_id}.jpg")
         downloaded_path = await self.media_manager.download_media(message, file_path)
 
         part_text = message.message or ''
         message_date = message.date.strftime('%Y-%m-%d %H:%M:%S')
-        self.logger.info(
-            f"Sending photo for message {message.id} from {message_date} from {downloaded_path} with message: '{part_text}'")
+        self.logger.info(f"Sending photo for message {message.id} from {message_date} from {downloaded_path} with message: '{part_text}'")
         sent_message = await self.client.bot.send_message(
             self.target_chat_id,
-            message=part_text,  # Используем message для текста
+            message=part_text,
             file=downloaded_path,
             force_document=False,
-            reply_to=target_topic_id if target_topic_id != 0 else None,
+            reply_to=target_reply_to_msg_id if target_reply_to_msg_id != 0 else None,
             formatting_entities=message.entities if message.entities else None
         )
         os.remove(downloaded_path)

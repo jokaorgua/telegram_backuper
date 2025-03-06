@@ -1,15 +1,11 @@
 import os
-
 from telethon.tl.types import DocumentAttributeVideo
 from tqdm import tqdm
-
 from .base_handler import BaseMediaHandler
-
 
 class VideoHandler(BaseMediaHandler):
     def supports(self, message_or_group):
         if isinstance(message_or_group, list):
-            # Проверяем, что все сообщения содержат только фото
             messages = message_or_group
         else:
             messages = [message_or_group]
@@ -24,7 +20,9 @@ class VideoHandler(BaseMediaHandler):
     def _is_round_video(self, message):
         return hasattr(message.media, 'round') and message.media.round is True
 
-    async def handle(self, message, target_topic_id):
+    async def handle(self, message_or_group, target_reply_to_msg_id):
+        # Пока VideoHandler не поддерживает группы, только одиночные сообщения
+        message = message_or_group
         file_path = os.path.join(self.processor.temp_dir, f"media_{message.id}_{self.processor.source_chat_id}.mp4")
         downloaded_path = await self.media_manager.download_media(message, file_path)
 
@@ -35,7 +33,7 @@ class VideoHandler(BaseMediaHandler):
             supports_streaming=True
         ) for attr in (
             message.media.document.attributes if hasattr(message.media, 'document') else [message.media.video])
-                         if isinstance(attr, DocumentAttributeVideo)][0:1]
+            if isinstance(attr, DocumentAttributeVideo)][0:1]
 
         self.logger.info("Video media: {}".format(message.media.__dict__))
         is_round = self._is_round_video(message)
@@ -51,8 +49,7 @@ class VideoHandler(BaseMediaHandler):
         message_date = message.date.strftime('%Y-%m-%d %H:%M:%S')
         for i, part_path in enumerate(file_paths, 1):
             part_size = os.path.getsize(part_path)
-            self.logger.info(
-                f"Preparing to send part {i} with size {part_size} bytes from {part_path} for message {message.id} from {message_date}")
+            self.logger.info(f"Preparing to send part {i} with size {part_size} bytes from {part_path} for message {message.id} from {message_date}")
             if not os.path.exists(part_path):
                 self.logger.error(f"File {part_path} does not exist before sending")
                 continue
@@ -77,7 +74,7 @@ class VideoHandler(BaseMediaHandler):
                         caption=part_text,
                         supports_streaming=True,
                         attributes=attributes,
-                        reply_to=target_topic_id if target_topic_id != 0 else None,
+                        reply_to=target_reply_to_msg_id if target_reply_to_msg_id != 0 else None,
                         formatting_entities=message.entities if message.entities else None,
                         progress_callback=progress_callback
                     )
