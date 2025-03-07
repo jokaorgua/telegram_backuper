@@ -132,8 +132,8 @@ class VideoHandler(BaseMediaHandler):
                 })
 
             # Разделяем видео на те, что < 2 ГБ и > 2 ГБ
-            small_videos = [info for info in video_info if info['size'] <= self.processor.TARGET_PART_SIZE]
-            large_videos = [info for info in video_info if info['size'] > self.processor.TARGET_PART_SIZE]
+            small_videos = [info for info in video_info if info['size'] <= self.media_manager.TARGET_PART_SIZE]
+            large_videos = [info for info in video_info if info['size'] > self.media_manager.TARGET_PART_SIZE]
             sent_messages = []
 
             # Обрабатываем видео < 2 ГБ как альбом
