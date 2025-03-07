@@ -19,7 +19,6 @@ class MessageProcessor:
         self.PART_SIZE = 512 * 1024
         self.MAX_PARTS = 4000
         self.MAX_FILE_SIZE = self.PART_SIZE * self.MAX_PARTS
-        self.TARGET_PART_SIZE = 1.9 * 1024 * 1024 * 1024
         self.processed_group_ids = set()
 
     async def process_message(self, message):
