@@ -1,7 +1,6 @@
-from telethon.tl.types import Message
-from telethon import utils
-import logging
 import asyncio
+import logging
+
 from .media_manager import MediaManager
 
 
@@ -25,10 +24,11 @@ class MessageProcessor:
 
     async def process_message(self, message):
         source_reply_to_msg_id = 0
+        source_reply_to_top_id = 0
         if hasattr(message, 'reply_to') and message.reply_to:
             source_reply_to_msg_id = message.reply_to.reply_to_msg_id
             if getattr(message.reply_to, 'forum_topic', False) and message.reply_to.reply_to_top_id:
-                source_reply_to_msg_id = message.reply_to.reply_to_top_id
+                source_reply_to_top_id = message.reply_to.reply_to_top_id
 
         if self.source_chat_id not in self.message_map:
             self.message_map[self.source_chat_id] = {}
@@ -46,9 +46,10 @@ class MessageProcessor:
             self.logger.info(f"Message {message.id} is part of group {message.grouped_id}, collecting group messages")
             group_messages = await self._collect_group_messages(message)
             if group_messages:
-                return await self._process_group_messages(group_messages, source_reply_to_msg_id)
+                return await self._process_group_messages(group_messages, source_reply_to_msg_id,
+                                                          source_reply_to_top_id)
 
-        return await self._process_single_message(message, source_reply_to_msg_id)
+        return await self._process_single_message(message, source_reply_to_msg_id, source_reply_to_top_id)
 
     async def _collect_group_messages(self, message):
         grouped_id = message.grouped_id
@@ -67,7 +68,7 @@ class MessageProcessor:
 
         return group_messages if len(group_messages) > 1 else None
 
-    async def _process_group_messages(self, messages, source_reply_to_msg_id):
+    async def _process_group_messages(self, messages, source_reply_to_msg_id, source_reply_to_top_id):
         lead_message = messages[0]
         message_date = lead_message.date.strftime('%Y-%m-%d %H:%M:%S')
         self.logger.info(
@@ -111,7 +112,7 @@ class MessageProcessor:
                 self.logger.info(
                     f"Reuploading group message {lead_message.id} from {message_date} due to missing target ID {target_msg_id}")
 
-        target_reply_to_msg_id = self._get_target_reply_to_msg_id(source_reply_to_msg_id)
+        target_reply_to_msg_id = self._get_target_reply_to_msg_id(source_reply_to_msg_id, source_reply_to_top_id)
 
         for handler in self.handlers:
             if handler.supports(messages):
@@ -131,7 +132,7 @@ class MessageProcessor:
         self.logger.error(f"No handler supports media type in group message {lead_message.id} from {message_date}")
         return None
 
-    async def _process_single_message(self, message, source_reply_to_msg_id):
+    async def _process_single_message(self, message, source_reply_to_msg_id, source_reply_to_top_id):
         message_date = message.date.strftime('%Y-%m-%d %H:%M:%S')
         msg_record = self.repository.get_message(message.id, self.source_chat_id, self.target_chat_id)
         target_msg_id = msg_record[1] if msg_record else None
@@ -156,7 +157,7 @@ class MessageProcessor:
                 self.logger.info(
                     f"Reuploading message {message.id} from {message_date} due to missing target ID {target_msg_id}")
 
-        target_reply_to_msg_id = self._get_target_reply_to_msg_id(source_reply_to_msg_id)
+        target_reply_to_msg_id = self._get_target_reply_to_msg_id(source_reply_to_msg_id, source_reply_to_top_id)
 
         if message.media:
             result = await self._handle_media(message, target_reply_to_msg_id)
@@ -174,15 +175,51 @@ class MessageProcessor:
             await asyncio.sleep(0.1)
         return result
 
-    def _get_target_reply_to_msg_id(self, source_reply_to_msg_id):
-        if source_reply_to_msg_id and source_reply_to_msg_id in self.message_map.get(self.source_chat_id, {}).get(
-                self.target_chat_id, {}):
+    def _get_target_reply_to_msg_id(self, source_reply_to_msg_id, source_reply_to_top_id):
+        # 1. Если source_reply_to_msg_id is None, возвращаем 0
+        if source_reply_to_msg_id is None and source_reply_to_top_id is None:
+            self.logger.info("source_reply_to_msg_id is None and source_reply_to_top_id is None, returning 0")
+            return None
+
+        # 3. Проверяем в кеше message_map
+        if source_reply_to_msg_id in self.message_map.get(self.source_chat_id, {}).get(self.target_chat_id, {}):
             target_reply_to_msg_id = self.message_map[self.source_chat_id][self.target_chat_id][source_reply_to_msg_id]
             self.logger.info(
-                f"Mapped source reply_to_msg_id {source_reply_to_msg_id} to target {target_reply_to_msg_id}")
+                f"Mapped source_reply_to_msg_id {source_reply_to_msg_id} to target {target_reply_to_msg_id} from cache")
             return target_reply_to_msg_id
-        self.logger.info(f"No mapping found for reply_to_msg_id {source_reply_to_msg_id}, using 0")
-        return 0
+
+        # 4. Проверяем в репозитории, если данных нет в кеше
+        msg_record = self.repository.get_message(source_reply_to_msg_id, self.source_chat_id, self.target_chat_id)
+        if msg_record and msg_record[1]:  # msg_record[1] - target_id
+            target_reply_to_msg_id = msg_record[1]
+            # Записываем в кеш
+            if self.source_chat_id not in self.message_map:
+                self.message_map[self.source_chat_id] = {}
+            if self.target_chat_id not in self.message_map[self.source_chat_id]:
+                self.message_map[self.source_chat_id][self.target_chat_id] = {}
+            self.message_map[self.source_chat_id][self.target_chat_id][source_reply_to_msg_id] = target_reply_to_msg_id
+            self.logger.info(
+                f"Mapped source_reply_to_msg_id {source_reply_to_msg_id} to target {target_reply_to_msg_id} from repository, added to cache")
+            return target_reply_to_msg_id
+
+        if source_reply_to_top_id is not None and source_reply_to_top_id != 0:
+            # 2. Проверяем в репозитории наличие топика по source_reply_to_msg_id
+            db_topic = self.repository.get_topic(source_reply_to_top_id, self.source_chat_id, self.target_chat_id)
+            if db_topic and db_topic[1]:  # msg_record[2] - topic_id
+                self.logger.info(
+                    f"Found topic {db_topic[1]} in repository for source_reply_to_top_id {source_reply_to_msg_id}")
+                return db_topic[1]
+
+        if source_reply_to_msg_id is not None and source_reply_to_msg_id != 0:
+            # 2. Проверяем в репозитории наличие топика по source_reply_to_msg_id
+            db_topic = self.repository.get_topic(source_reply_to_msg_id, self.source_chat_id, self.target_chat_id)
+            if db_topic and db_topic[1]:  # msg_record[2] - topic_id
+                self.logger.info(
+                    f"Found topic {db_topic[1]} in repository for source_reply_to_msg_id {source_reply_to_msg_id}")
+                return db_topic[1]
+
+        self.logger.info(f"No mapping found for reply_to_msg_id {source_reply_to_msg_id}, returning 0")
+        return None
 
     async def _handle_media(self, message, target_reply_to_msg_id):
         message_date = message.date.strftime('%Y-%m-%d %H:%M:%S')
