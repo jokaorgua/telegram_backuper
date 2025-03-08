@@ -97,7 +97,7 @@ class VideoHandler(BaseMediaHandler):
                     sent_message = await self.client.bot.send_file(
                         self.target_chat_id,
                         file=part_path,
-                        caption=part_text,
+                        caption=part_text[:1023],
                         supports_streaming=True,
                         attributes=attributes,
                         reply_to=target_reply_to_msg_id if target_reply_to_msg_id != 0 else None,
