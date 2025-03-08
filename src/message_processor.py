@@ -1,3 +1,4 @@
+# src/message_processor.py
 import asyncio
 import logging
 
@@ -5,7 +6,7 @@ from .media_manager import MediaManager
 
 
 class MessageProcessor:
-    def __init__(self, client, source_chat_id, target_chat_id, repository, temp_dir, handlers):
+    def __init__(self, client, source_chat_id, target_chat_id, repository, temp_dir, handlers, caption_limit):
         self.logger = logging.getLogger(__name__)
         self.logger.info(f"Initializing MessageProcessor for source {source_chat_id} to target {target_chat_id}")
         self.client = client
@@ -13,9 +14,10 @@ class MessageProcessor:
         self.target_chat_id = target_chat_id
         self.repository = repository
         self.temp_dir = temp_dir
+        self.caption_limit = caption_limit  # Новый параметр
         self.message_map = {}
         self.media_manager = MediaManager(client, temp_dir)
-        self.handlers = [handler(self) for handler in handlers]
+        self.handlers = [handler(self) for handler in handlers]  # Передаем self с caption_limit в хендлеры
         self.PART_SIZE = 512 * 1024
         self.MAX_PARTS = 4000
         self.MAX_FILE_SIZE = self.PART_SIZE * self.MAX_PARTS
@@ -117,7 +119,7 @@ class MessageProcessor:
             if handler.supports(messages):
                 self.logger.info(
                     f"Selected handler {handler.__class__.__name__} for group message {lead_message.id} from {message_date}")
-                result = await handler.handle(messages, target_reply_to_msg_id)
+                result = await handler.handle(messages, target_reply_to_msg_id)  # Здесь уже всё передано через self
                 if result:
                     target_id = result[0].id if isinstance(result, list) else result.id
                     # Обновляем базу и маппинг для всех сообщений группы
@@ -226,7 +228,7 @@ class MessageProcessor:
             if handler.supports(message):
                 self.logger.info(
                     f"Selected handler {handler.__class__.__name__} for message {message.id} from {message_date}")
-                return await handler.handle(message, target_reply_to_msg_id)
+                return await handler.handle(message, target_reply_to_msg_id)  # Здесь уже всё передано через self
         self.logger.error(
             f"No handler supports media type in message {message.id} from {message_date}, message dump: {message.__dict__}")
         return None

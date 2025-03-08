@@ -1,3 +1,4 @@
+# src/handlers/mixed_media_handler.py
 import os
 from .base_handler import BaseMediaHandler
 from tqdm import tqdm
@@ -34,8 +35,13 @@ class MixedMediaHandler(BaseMediaHandler):
         lead_message = messages[0]
         message_date = lead_message.date.strftime('%Y-%m-%d %H:%M:%S')
         text_parts = [msg.message.strip() for msg in messages if msg.message and msg.message.strip()]
-        part_text = '\n'.join(text_parts) if text_parts else ''
+        original_text = '\n'.join(text_parts) or ''
+        part_text = original_text[:self.caption_limit]
+        if len(original_text) > self.caption_limit:
+            self.logger.info(f"Caption for message {lead_message.id} truncated from {len(original_text)} to {self.caption_limit} characters")
         entities = next((msg.entities for msg in messages if msg.entities), None)
+        if entities:
+            entities = self._adjust_entities(original_text, part_text, entities)
 
         file_paths = []
         for msg in messages:
@@ -68,9 +74,9 @@ class MixedMediaHandler(BaseMediaHandler):
                 file=file_paths,
                 force_document=False,
                 reply_to=target_reply_to_msg_id if target_reply_to_msg_id != 0 else None,
-                formatting_entities=entities if entities else None,
+                formatting_entities=entities,
                 supports_streaming=True,
-                progress_callback=progress_callback  # Включили обратно progress_callback
+                progress_callback=progress_callback
             )
             sent_messages.append(sent_message)
 

@@ -1,8 +1,8 @@
+# src/handlers/video_handler.py
 import os
 from telethon.tl.types import DocumentAttributeVideo
 from tqdm import tqdm
 from .base_handler import BaseMediaHandler
-
 
 class VideoHandler(BaseMediaHandler):
     def supports(self, message_or_group):
@@ -50,7 +50,17 @@ class VideoHandler(BaseMediaHandler):
 
         if was_split:
             # Если видео разрезанное, заливаем как альбом с уточнением
-            captions = [f"Разрезанное видео. Часть {i}\n{message.message or ''}" for i in range(1, len(file_paths) + 1)]
+            captions = []
+            entities_list = []
+            for i in range(1, len(file_paths) + 1):
+                original_caption = f"Разрезанное видео. Часть {i}\n{message.message or ''}"
+                truncated_caption = original_caption[:self.caption_limit]
+                if len(original_caption) > self.caption_limit:
+                    self.logger.info(f"Caption for part {i} of message {message.id} truncated from {len(original_caption)} to {self.caption_limit} characters")
+                captions.append(truncated_caption)
+                adjusted_entities = self._adjust_entities(original_caption, truncated_caption, message.entities)
+                entities_list.append(adjusted_entities)
+
             self.logger.info(f"Uploading {len(file_paths)} split video parts as album for message {message.id} from {message_date}")
             with tqdm(total=sum(os.path.getsize(part_path) for part_path in file_paths), unit='B', unit_scale=True,
                       desc=f"Uploading split video album for message {message.id}") as pbar:
@@ -64,7 +74,7 @@ class VideoHandler(BaseMediaHandler):
                     supports_streaming=True,
                     attributes=attributes,
                     reply_to=target_reply_to_msg_id if target_reply_to_msg_id != 0 else None,
-                    formatting_entities=message.entities if message.entities else None,
+                    formatting_entities=entities_list[0] if entities_list and entities_list[0] else None,
                     progress_callback=progress_callback
                 )
             sent_messages.extend(sent_message_group if isinstance(sent_message_group, list) else [sent_message_group])
@@ -80,7 +90,12 @@ class VideoHandler(BaseMediaHandler):
                 self.logger.error(f"File {part_path} does not exist before sending")
                 return None
 
-            part_text = message.message or ''
+            original_text = message.message or ''
+            part_text = original_text[:self.caption_limit]
+            if len(original_text) > self.caption_limit:
+                self.logger.info(f"Caption for message {message.id} truncated from {len(original_text)} to {self.caption_limit} characters")
+            entities = self._adjust_entities(original_text, part_text, message.entities)
+
             with tqdm(total=part_size, unit='B', unit_scale=True,
                       desc=f"Uploading {'video note' if is_round else 'video'} for message {message.id}") as pbar:
                 def progress_callback(current, total):
@@ -97,11 +112,11 @@ class VideoHandler(BaseMediaHandler):
                     sent_message = await self.client.bot.send_file(
                         self.target_chat_id,
                         file=part_path,
-                        caption=part_text[:1023],
+                        caption=part_text,
                         supports_streaming=True,
                         attributes=attributes,
                         reply_to=target_reply_to_msg_id if target_reply_to_msg_id != 0 else None,
-                        formatting_entities=message.entities if message.entities else None,
+                        formatting_entities=entities,
                         progress_callback=progress_callback
                     )
             sent_messages.append(sent_message)
@@ -139,7 +154,17 @@ class VideoHandler(BaseMediaHandler):
             # Обрабатываем видео < 2 ГБ как альбом
             if small_videos:
                 file_paths = [info['path'] for info in small_videos]
-                captions = [info['message'].message or '' for info in small_videos]
+                captions = []
+                entities_list = []
+                for i, info in enumerate(small_videos, 1):
+                    original_caption = info['message'].message or ''
+                    truncated_caption = original_caption[:self.caption_limit]
+                    if len(original_caption) > self.caption_limit:
+                        self.logger.info(f"Caption for video {i} of message {lead_message.id} truncated from {len(original_caption)} to {self.caption_limit} characters")
+                    captions.append(truncated_caption)
+                    adjusted_entities = self._adjust_entities(original_caption, truncated_caption, info['message'].entities)
+                    entities_list.append(adjusted_entities)
+
                 self.logger.info(f"Uploading {len(small_videos)} videos within 2GB as album for message {lead_message.id} from {message_date}")
                 with tqdm(total=sum(info['size'] for info in small_videos), unit='B', unit_scale=True,
                           desc=f"Uploading video album for message {lead_message.id}") as pbar:
@@ -152,7 +177,7 @@ class VideoHandler(BaseMediaHandler):
                         caption=captions,
                         supports_streaming=True,
                         reply_to=target_reply_to_msg_id if target_reply_to_msg_id != 0 else None,
-                        formatting_entities=lead_message.entities if lead_message.entities else None,
+                        formatting_entities=entities_list[0] if entities_list and entities_list[0] else None,
                         progress_callback=progress_callback
                     )
                 sent_messages.extend(sent_message_group if isinstance(sent_message_group, list) else [sent_message_group])

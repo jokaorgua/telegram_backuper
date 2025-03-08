@@ -1,10 +1,8 @@
+# src/handlers/file_handler.py
 import os
-
 from telethon.tl.types import DocumentAttributeFilename
 from tqdm import tqdm
-
 from .base_handler import BaseMediaHandler
-
 
 class FileHandler(BaseMediaHandler):
     def supports(self, message_or_group):
@@ -24,10 +22,13 @@ class FileHandler(BaseMediaHandler):
 
     async def _process_single_message(self, message, target_reply_to_msg_id):
         message_date = message.date.strftime('%Y-%m-%d %H:%M:%S')
-        text_part = message.message.strip()
+        original_text = message.message.strip() or ''
+        text_part = original_text[:self.caption_limit]
+        if len(original_text) > self.caption_limit:
+            self.logger.info(f"Caption for message {message.id} truncated from {len(original_text)} to {self.caption_limit} characters")
         entities = None
         if message.entities:
-            entities = next(message.entities)
+            entities = self._adjust_entities(original_text, text_part, message.entities)
 
         document_extension = message.file.ext
         file_path = os.path.join(self.processor.temp_dir,
@@ -52,8 +53,8 @@ class FileHandler(BaseMediaHandler):
                 file=downloaded_path,
                 force_document=True,
                 reply_to=target_reply_to_msg_id if target_reply_to_msg_id != 0 else None,
-                formatting_entities=entities if entities else None,
-                progress_callback=progress_callback  # Включили обратно progress_callback
+                formatting_entities=entities,
+                progress_callback=progress_callback
             )
 
         os.remove(file_path)
@@ -66,8 +67,13 @@ class FileHandler(BaseMediaHandler):
             lead_message = message_or_group[0]
             message_date = lead_message.date.strftime('%Y-%m-%d %H:%M:%S')
             text_parts = [msg.message.strip() for msg in message_or_group if msg.message and msg.message.strip()]
-            part_text = '\n'.join(text_parts) if text_parts else ''
+            original_text = '\n'.join(text_parts) or ''
+            part_text = original_text[:self.caption_limit]
+            if len(original_text) > self.caption_limit:
+                self.logger.info(f"Caption for message {lead_message.id} truncated from {len(original_text)} to {self.caption_limit} characters")
             entities = next((msg.entities for msg in message_or_group if msg.entities), None)
+            if entities:
+                entities = self._adjust_entities(original_text, part_text, entities)
 
             file_paths = []
             for msg in message_or_group:
@@ -93,8 +99,8 @@ class FileHandler(BaseMediaHandler):
                     file=file_paths,
                     force_document=True,
                     reply_to=target_reply_to_msg_id if target_reply_to_msg_id != 0 else None,
-                    formatting_entities=entities if entities else None,
-                    progress_callback=progress_callback  # Включили обратно progress_callback
+                    formatting_entities=entities,
+                    progress_callback=progress_callback
                 )
                 sent_messages.append(sent_message)
 

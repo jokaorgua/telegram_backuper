@@ -1,3 +1,4 @@
+# src/handlers/audio_handler.py
 import os
 from .base_handler import BaseMediaHandler
 from telethon.tl.types import DocumentAttributeAudio
@@ -32,7 +33,12 @@ class AudioHandler(BaseMediaHandler):
             ) for attr in message.media.document.attributes if isinstance(attr, DocumentAttributeAudio)
         ] or [DocumentAttributeAudio(duration=0, voice=True)]
 
-        part_text = message.message or ''
+        original_text = message.message or ''
+        part_text = original_text[:self.caption_limit]
+        if len(original_text) > self.caption_limit:
+            self.logger.info(f"Caption for message {message.id} truncated from {len(original_text)} to {self.caption_limit} characters")
+        adjusted_entities = self._adjust_entities(original_text, part_text, message.entities)
+
         message_date = message.date.strftime('%Y-%m-%d %H:%M:%S')
         file_size = os.path.getsize(downloaded_path)
         with tqdm(total=file_size, unit='B', unit_scale=True, desc=f"Uploading voice note {message.id}") as pbar:
@@ -47,7 +53,7 @@ class AudioHandler(BaseMediaHandler):
                 voice_note=True,
                 attributes=attributes,
                 reply_to=target_reply_to_msg_id if target_reply_to_msg_id != 0 else None,
-                formatting_entities=message.entities if message.entities else None,
+                formatting_entities=adjusted_entities,
                 progress_callback=progress_callback
             )
         os.remove(downloaded_path)

@@ -1,3 +1,4 @@
+# src/config.py
 import yaml
 import logging
 import colorlog
@@ -20,6 +21,7 @@ class Config:
     log_level: str
     log_file: str
     temp_dir: str
+    caption_limit: int  # Новый параметр
 
     @classmethod
     def load(cls, path: str) -> 'Config':
@@ -38,7 +40,8 @@ class Config:
                     pairs=pairs,
                     log_level=data['logging']['level'],
                     log_file=data['logging']['file'],
-                    temp_dir=data['temp_dir']
+                    temp_dir=data['temp_dir'],
+                    caption_limit=data.get('caption_limit', 1000)  # Значение по умолчанию 1000
                 )
         except Exception as e:
             logger.error(f"Failed to load configuration: {str(e)}")

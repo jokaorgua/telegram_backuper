@@ -1,3 +1,4 @@
+# src/main.py
 import asyncio
 from datetime import datetime, timedelta
 
@@ -56,7 +57,7 @@ async def main(args):
     mode = args.mode
     if mode in ["sync", "sync-threads", "sync-topics", "sync-thread"]:
         pair_name, source_chat_id, target_chat_id = await select_pair(config)
-        processor = MessageProcessor(client, source_chat_id, target_chat_id, repo, config.temp_dir, handlers)
+        processor = MessageProcessor(client, source_chat_id, target_chat_id, repo, config.temp_dir, handlers, config.caption_limit)
         synchronizer = Synchronizer(client, source_chat_id, target_chat_id, repo, config.temp_dir, processor)
 
         if mode == "sync":
@@ -103,7 +104,7 @@ async def main(args):
         logger.info("Selected listen mode - monitoring all pairs")
         tasks = []
         for pair in config.pairs:
-            processor = MessageProcessor(client, pair.source_chat_id, pair.target_chat_id, repo, config.temp_dir, handlers)
+            processor = MessageProcessor(client, pair.source_chat_id, pair.target_chat_id, repo, config.temp_dir, handlers, config.caption_limit)
             synchronizer = Synchronizer(client, pair.source_chat_id, pair.target_chat_id, repo, config.temp_dir, processor)
             tasks.append(synchronizer.listen_new_messages())
         await asyncio.gather(*tasks)
