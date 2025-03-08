@@ -36,7 +36,7 @@ class PhotoHandler(BaseMediaHandler):
             self.logger.info(f"Sending group of {len(file_paths)} photos for message {lead_message.id} from {message_date} with message: '{part_text}'")
             sent_message = await self.client.bot.send_message(
                 self.target_chat_id,
-                message=part_text,
+                message=part_text[:1023],
                 file=file_paths,
                 force_document=False,
                 reply_to=target_reply_to_msg_id if target_reply_to_msg_id != 0 else None,
@@ -57,7 +57,7 @@ class PhotoHandler(BaseMediaHandler):
         self.logger.info(f"Sending photo for message {message.id} from {message_date} from {downloaded_path} with message: '{part_text}'")
         sent_message = await self.client.bot.send_message(
             self.target_chat_id,
-            message=part_text,
+            message=part_text[:1023],
             file=downloaded_path,
             force_document=False,
             reply_to=target_reply_to_msg_id if target_reply_to_msg_id != 0 else None,
