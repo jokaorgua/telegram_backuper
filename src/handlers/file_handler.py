@@ -14,7 +14,8 @@ class FileHandler(BaseMediaHandler):
             (((hasattr(msg.media, 'voice') and msg.media.voice == False) or (not hasattr(msg.media, 'voice'))) and
              ((hasattr(msg.media, 'round') and msg.media.round == False) or (not hasattr(msg.media, 'round'))) and
              ((hasattr(msg.media, 'video') and msg.media.video == False) or (not hasattr(msg.media, 'video'))) and
-             (not hasattr(msg.media, 'photo'))) or
+             (not hasattr(msg.media, 'photo')) and
+             (not hasattr(msg.media, 'webpage'))) or
             (hasattr(msg.media, 'document') and hasattr(msg.media.document, 'mime_type') and
              msg.media.document.mime_type.startswith('application/'))
             for msg in messages
